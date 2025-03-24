@@ -1,16 +1,18 @@
 import os
 import tempfile
 import concurrent.futures
-
+import pytesseract
 import cv2
 import numpy as np
+
 from PIL import Image
+from fastapi import UploadFile, HTTPException
 
 from PyPDF2 import PdfReader
 from pdf2image import convert_from_path
-import pytesseract
 
-from fastapi import UploadFile, HTTPException
+from ..core.tokenizers import tokenizer
+
 
 
 CHUNK_SIZE = 1024 * 1024  # 1 MB por bloque
@@ -87,6 +89,18 @@ async def extract_text_with_ocr(pdf_path: str) -> str:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en OCR: {str(e)}")
 
+
+def count_tokens(text: str) -> int:
+    """
+    Cuenta el número de tokens en un texto dado usando el tokenizer de GPT-2.
+    
+    Args:
+        text (str): El texto a tokenizar.
+    
+    Returns:
+        int: El número de tokens en el texto.
+    """
+    return len(tokenizer.encode(text))
 
 #version 2 (optimizado)
 # async def extract_text_with_ocr(pdf_path: str) -> str:
