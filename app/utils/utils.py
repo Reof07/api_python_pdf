@@ -101,29 +101,3 @@ def count_tokens(text: str) -> int:
         int: El número de tokens en el texto.
     """
     return len(tokenizer.encode(text))
-
-#version 2 (optimizado)
-# async def extract_text_with_ocr(pdf_path: str) -> str:
-#     """Extrae texto de un PDF escaneado usando OCR optimizado."""
-#     try:
-#         pages = convert_from_path(pdf_path)  # Convertir PDF a imágenes
-#         text = ""
-#         for page in pages:
-#             # Preprocesar la imagen antes de OCR
-#             processed_page = preprocess_image(page)
-#             text += pytesseract.image_to_string(processed_page, config="--oem 3 --psm 6")
-#         return text
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"Error en OCR: {str(e)}")
-
-#version 1 (no optimizado)
-# async def extract_text_with_ocr(pdf_path: str) -> str:
-#     """Extrae texto de un PDF escaneado usando OCR."""
-#     try:
-#         pages = convert_from_path(pdf_path)  # Convertir PDF a imágenes
-#         text = ""
-#         for page in pages:
-#             text += pytesseract.image_to_string(page)  # Extraer texto con OCR
-#         return text
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"Error en OCR: {str(e)}")
