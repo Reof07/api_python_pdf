@@ -5,6 +5,7 @@ from PIL import Image
 from typing import Dict
 from fastapi import UploadFile, HTTPException
 from langchain_community.document_loaders import PyPDFLoader, PDFPlumberLoader
+from langchain_community.document_loaders import UnstructuredXMLLoader
 
 from ..utils.utils import get_pdf_page_count, is_pdf_pure, extract_text_with_ocr
 from ..utils.utils import get_file_size, save_file_to_temp, preprocess_image
@@ -157,3 +158,55 @@ class ImageExtractionService:
         finally:
             if temp_file_path and os.path.exists(temp_file_path):
                 await asyncio.to_thread(os.remove, temp_file_path)
+                
+                
+class XMLExtractionService:
+    @staticmethod
+    async def extract_from_xml(file: UploadFile) -> Dict:
+        """
+        Extrae contenido de un archivo XML usando UnstructuredXMLLoader.
+        Retorna un diccionario con los resultados y conteo de tokens.
+        """
+        temp_file_path = None
+        try:
+            # Validar tamaño del archivo
+            file_size = await get_file_size(file)
+            if file_size > MAX_FILE_SIZE:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"El archivo {file.filename} excede el tamaño máximo permitido (200MB)."
+                )
+
+            # Guardar archivo temporalmente
+            temp_file_path = await save_file_to_temp(file)
+
+            # Utilizar UnstructuredXMLLoader para cargar el XML
+            loader = UnstructuredXMLLoader(temp_file_path)
+            # El loader procesa el XML y devuelve una lista de documentos. Se ejecuta en un hilo aparte.
+            documents = await asyncio.to_thread(loader.load)
+            if not documents or not any(doc.page_content.strip() for doc in documents):
+                return {
+                    "filename": file.filename,
+                    "size_bytes": file_size,
+                    "message": "No se pudo extraer contenido del XML."
+                }
+            # Extraer el contenido de cada documento
+            content = [doc.page_content for doc in documents]
+            # Contar tokens usando el mismo tokenizer que para PDF e imágenes
+            total_tokens = sum(len(tokenizer.encode(chunk)) for chunk in content)
+            
+            return {
+                "filename": file.filename,
+                "size_bytes": file_size,
+                "content": content,
+                "token_count": total_tokens,
+                "note": "Contenido extraído de XML usando UnstructuredXMLLoader"
+            }
+        except HTTPException as e:
+            return {"filename": file.filename, "error": str(e.detail)}
+        except Exception as e:
+            return {"filename": file.filename, "error": f"Error inesperado: {str(e)}"}
+        finally:
+            if temp_file_path and os.path.exists(temp_file_path):
+                await asyncio.to_thread(os.remove, temp_file_path)
+
