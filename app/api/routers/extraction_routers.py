@@ -6,7 +6,11 @@ from fastapi import (
     UploadFile,
     )
 
-from ...service.pdf_reader import PDFExtractionService, ImageExtractionService, XMLExtractionService
+from ...service.pdf_reader import (
+    PDFExtractionService, 
+    ImageExtractionService, 
+    XMLExtractionService
+)
 
 extraction_router = APIRouter(
     prefix="/data-extraction",
