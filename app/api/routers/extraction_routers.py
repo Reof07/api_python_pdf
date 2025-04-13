@@ -1,15 +1,22 @@
 from typing import List
 
+from charset_normalizer import from_bytes
+
 from fastapi import (
     APIRouter,
     File, 
     UploadFile,
+    HTTPException,
     )
+
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+import pandas as pd
 
 from ...service.pdf_reader import (
     PDFExtractionService, 
     ImageExtractionService, 
-    XMLExtractionService
+    XMLExtractionService,
+    CSVExtractionService,
 )
 
 extraction_router = APIRouter(
@@ -43,11 +50,42 @@ async def data_extraction(files: List[UploadFile]):
 
 
 
+# @extraction_router.post("/xml")
+# async def extract_from_xml(file: UploadFile = File(...)):
+#     """
+#     Extrae contenido de un archivo XML usando UnstructuredXMLLoader.
+#     """
+#     # Validar tamaño del archivo que sea XML
+#     result = await XMLExtractionService.extract_from_xml(file)
+#     return result
+
+
 @extraction_router.post("/xml")
 async def extract_from_xml(file: UploadFile = File(...)):
-    """
-    Extrae contenido de un archivo XML usando UnstructuredXMLLoader.
-    """
-    # Validar tamaño del archivo que sea XML
-    result = await XMLExtractionService.extract_from_xml(file)
-    return result
+    try:
+        excel_io, filename = await XMLExtractionService.extract_from_xml(file)
+    except HTTPException as e:
+        raise e
+    return StreamingResponse(
+        excel_io,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+@extraction_router.post("/csv")
+async def extract_from_csv(file: UploadFile = File(...)):
+    
+    
+    result = await CSVExtractionService.extract_from_csv(file)
+    
+    if "error" in result:
+        return JSONResponse(
+            status_code=400 if "máximo permitido" in result["error"] else 500,
+            content=result
+        )
+        
+    return FileResponse(
+        path=result["excel_path"],
+        filename="convertido.xlsx",
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )

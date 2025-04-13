@@ -1,5 +1,6 @@
 import os
 import tempfile
+import re
 import concurrent.futures
 import pytesseract
 import cv2
@@ -101,3 +102,38 @@ def count_tokens(text: str) -> int:
         int: El número de tokens en el texto.
     """
     return len(tokenizer.encode(text))
+
+
+
+def generate_markdown(content: list[str]) -> str:
+    """
+    Genera un string en formato Markdown a partir de una lista de strings.
+    """
+    markdown = ""
+    for block in content:
+        block = block.strip()
+
+        # Detectar si es tipo tabla (por separadores de columnas)
+        if '|' in block and '\n' in block:
+            lines = block.strip().split('\n')
+            if len(lines) >= 2 and all('|' in line for line in lines[:2]):
+                header = lines[0]
+                separator = '|'.join(['---'] * len(header.split('|')))
+                markdown += f"{header}\n{separator}\n" + '\n'.join(lines[1:]) + '\n\n'
+                continue
+
+        # Detectar listas
+        if re.search(r'^[-*+]\s', block, re.MULTILINE):
+            markdown += block + "\n\n"
+            continue
+
+        # Detectar posibles cabeceras tipo factura
+        factura_lines = block.split('\n')
+        if all(':' in line for line in factura_lines if line.strip()):
+            markdown += '\n'.join([f"**{k.strip()}**: {v.strip()}" for k, v in (line.split(':', 1) for line in factura_lines if ':' in line)]) + "\n\n"
+            continue
+
+        # Por defecto, como párrafo
+        markdown += block + "\n\n"
+
+    return markdown.strip()
