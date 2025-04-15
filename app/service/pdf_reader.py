@@ -230,93 +230,169 @@ class ImageExtractionService:
 
 
 
+# class XMLExtractionService:
+#     @staticmethod
+#     async def extract_from_xml(file: UploadFile) -> tuple[BytesIO, str]:
+#         # 1) Validaciones
+#         if not file.filename.lower().endswith(".xml"):
+#             raise HTTPException(400, "Solo .xml")
+#         size = await get_file_size(file)
+#         if size > MAX_FILE_SIZE:
+#             raise HTTPException(400, "Archivo >200MB")
+
+#         tmp = await save_file_to_temp(file)
+#         try:
+#             # 2) Parseo
+#             tree = await asyncio.to_thread(ET.parse, tmp)
+#             root = tree.getroot()  # <registro_catastral>
+
+#             data = []
+#             for predio in root.findall("predio"):
+#                 row = {}
+#                 # campos directos
+#                 for tag in [
+#                     "departamento","municipio","codigo_predial_nacional",
+#                     "codigo_predial_anterior","codigo_homologado",
+#                     "matricula_inmobiliaria","direccion",
+#                     "area_terreno","area_construida",
+#                     "destino_economico","condicion_predio",
+#                     "tipo_predio","tipo_derecho"
+#                 ]:
+#                     elem = predio.find(tag)
+#                     row[tag] = elem.text if elem is not None else ""
+
+#                 # avaluos
+#                 av = predio.find("avaluos_catastrales/avaluo_catastral")
+#                 if av is not None:
+#                     row["avaluo"]   = av.findtext("avaluo","")
+#                     row["vigencia"] = av.findtext("vigencia","")
+#                 else:
+#                     row["avaluo"] = row["vigencia"] = ""
+
+#                 # interesados (natural o juridica)
+#                 intr = predio.find("interesados")
+#                 if intr is not None:
+#                     pj = intr.find("persona_juridica")
+#                     pn = intr.find("persona_natural")
+#                     if pj is not None:
+#                         row["tipo_interesado"]     = "juridica"
+#                         row["doc_tipo"]            = pj.findtext("documento","")
+#                         row["doc_numero"]          = pj.findtext("numero_documento","")
+#                         row["razon_social"]        = pj.findtext("razon_social","")
+#                         # campos de persona natural vacíos
+#                         row.update({k:"" for k in ["primer_nombre","segundo_nombre","primer_apellido","segundo_apellido"]})
+#                     elif pn is not None:
+#                         row["tipo_interesado"]     = "natural"
+#                         row["doc_tipo"]            = pn.findtext("documento","")
+#                         row["doc_numero"]          = pn.findtext("numero_documento","")
+#                         row["primer_nombre"]       = pn.findtext("primer_nombre","")
+#                         row["segundo_nombre"]      = pn.findtext("segundo_nombre","")
+#                         row["primer_apellido"]     = pn.findtext("primer_apellido","")
+#                         row["segundo_apellido"]    = pn.findtext("segundo_apellido","")
+#                         # campos de persona juridica vacíos
+#                         row["razon_social"] = ""
+#                     else:
+#                         # sin interesado
+#                         row.update({
+#                             "tipo_interesado":"", "doc_tipo":"", "doc_numero":"",
+#                             "razon_social":"","primer_nombre":"","segundo_nombre":"",
+#                             "primer_apellido":"","segundo_apellido":""
+#                         })
+#                 data.append(row)
+
+#             if not data:
+#                 raise HTTPException(400, "No hay <predio> en el XML")
+
+#             # 3) DataFrame con headers limpios
+#             df = pd.DataFrame(data)
+
+#             # 4) Excel en memoria
+#             output = BytesIO()
+#             with pd.ExcelWriter(output, engine="openpyxl") as w:
+#                 df.to_excel(w, index=False, sheet_name="Datos")
+#             output.seek(0)
+
+#             fname = os.path.splitext(file.filename)[0] + ".xlsx"
+#             return output, fname
+
+#         except ET.ParseError as e:
+#             raise HTTPException(400, f"XML mal formado: {e}")
+#         finally:
+#             if os.path.exists(tmp):
+#                 await asyncio.to_thread(os.remove, tmp)
+
+
 class XMLExtractionService:
     @staticmethod
     async def extract_from_xml(file: UploadFile) -> tuple[BytesIO, str]:
-        # 1) Validaciones
         if not file.filename.lower().endswith(".xml"):
-            raise HTTPException(400, "Solo .xml")
+            raise HTTPException(400, "Solo se permiten archivos .xml")
+
         size = await get_file_size(file)
         if size > MAX_FILE_SIZE:
-            raise HTTPException(400, "Archivo >200MB")
+            raise HTTPException(400, "El archivo excede el tamaño permitido")
 
         tmp = await save_file_to_temp(file)
+
         try:
-            # 2) Parseo
+            # Parsear XML
             tree = await asyncio.to_thread(ET.parse, tmp)
-            root = tree.getroot()  # <registro_catastral>
+            root = tree.getroot()
 
             data = []
+
             for predio in root.findall("predio"):
                 row = {}
-                # campos directos
-                for tag in [
-                    "departamento","municipio","codigo_predial_nacional",
-                    "codigo_predial_anterior","codigo_homologado",
-                    "matricula_inmobiliaria","direccion",
-                    "area_terreno","area_construida",
-                    "destino_economico","condicion_predio",
-                    "tipo_predio","tipo_derecho"
-                ]:
-                    elem = predio.find(tag)
-                    row[tag] = elem.text if elem is not None else ""
 
-                # avaluos
+                # Campos directos (todos los hijos de <predio> excepto los compuestos)
+                for child in predio:
+                    if child.tag in ["avaluos_catastrales", "interesados"]:
+                        continue
+                    row[child.tag] = child.text if child.text else ""
+
+                # Avaluo
                 av = predio.find("avaluos_catastrales/avaluo_catastral")
                 if av is not None:
-                    row["avaluo"]   = av.findtext("avaluo","")
-                    row["vigencia"] = av.findtext("vigencia","")
-                else:
-                    row["avaluo"] = row["vigencia"] = ""
+                    for av_item in av:
+                        row[f"avaluo_{av_item.tag}"] = av_item.text if av_item.text else ""
 
-                # interesados (natural o juridica)
+                # Interesado
                 intr = predio.find("interesados")
                 if intr is not None:
                     pj = intr.find("persona_juridica")
                     pn = intr.find("persona_natural")
                     if pj is not None:
-                        row["tipo_interesado"]     = "juridica"
-                        row["doc_tipo"]            = pj.findtext("documento","")
-                        row["doc_numero"]          = pj.findtext("numero_documento","")
-                        row["razon_social"]        = pj.findtext("razon_social","")
-                        # campos de persona natural vacíos
-                        row.update({k:"" for k in ["primer_nombre","segundo_nombre","primer_apellido","segundo_apellido"]})
+                        row["tipo_interesado"] = "juridica"
+                        for child in pj:
+                            row[f"interesado_juridica_{child.tag}"] = child.text if child.text else ""
                     elif pn is not None:
-                        row["tipo_interesado"]     = "natural"
-                        row["doc_tipo"]            = pn.findtext("documento","")
-                        row["doc_numero"]          = pn.findtext("numero_documento","")
-                        row["primer_nombre"]       = pn.findtext("primer_nombre","")
-                        row["segundo_nombre"]      = pn.findtext("segundo_nombre","")
-                        row["primer_apellido"]     = pn.findtext("primer_apellido","")
-                        row["segundo_apellido"]    = pn.findtext("segundo_apellido","")
-                        # campos de persona juridica vacíos
-                        row["razon_social"] = ""
+                        row["tipo_interesado"] = "natural"
+                        for child in pn:
+                            row[f"interesado_natural_{child.tag}"] = child.text if child.text else ""
                     else:
-                        # sin interesado
-                        row.update({
-                            "tipo_interesado":"", "doc_tipo":"", "doc_numero":"",
-                            "razon_social":"","primer_nombre":"","segundo_nombre":"",
-                            "primer_apellido":"","segundo_apellido":""
-                        })
+                        row["tipo_interesado"] = "desconocido"
+
                 data.append(row)
 
             if not data:
-                raise HTTPException(400, "No hay <predio> en el XML")
+                raise HTTPException(400, "No se encontraron predios en el XML.")
 
-            # 3) DataFrame con headers limpios
+            # Crear DataFrame
             df = pd.DataFrame(data)
 
-            # 4) Excel en memoria
+            # Generar Excel
             output = BytesIO()
             with pd.ExcelWriter(output, engine="openpyxl") as w:
                 df.to_excel(w, index=False, sheet_name="Datos")
             output.seek(0)
 
-            fname = os.path.splitext(file.filename)[0] + ".xlsx"
-            return output, fname
+            filename = os.path.splitext(file.filename)[0] + ".xlsx"
+            return output, filename
 
         except ET.ParseError as e:
             raise HTTPException(400, f"XML mal formado: {e}")
+        except Exception as e:
+            raise HTTPException(500, f"Error procesando XML: {e}")
         finally:
             if os.path.exists(tmp):
                 await asyncio.to_thread(os.remove, tmp)
