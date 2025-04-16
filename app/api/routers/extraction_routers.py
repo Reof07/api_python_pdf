@@ -49,17 +49,6 @@ async def data_extraction(files: List[UploadFile]):
     return {"results": results}
 
 
-
-# @extraction_router.post("/xml")
-# async def extract_from_xml(file: UploadFile = File(...)):
-#     """
-#     Extrae contenido de un archivo XML usando UnstructuredXMLLoader.
-#     """
-#     # Validar tamaño del archivo que sea XML
-#     result = await XMLExtractionService.extract_from_xml(file)
-#     return result
-
-
 @extraction_router.post("/xml")
 async def extract_from_xml(file: UploadFile = File(...)):
     try:
