@@ -1,16 +1,19 @@
 import os
 import tempfile
+import re
 import concurrent.futures
-
+import pytesseract
 import cv2
 import numpy as np
+
 from PIL import Image
+from fastapi import UploadFile, HTTPException
 
 from PyPDF2 import PdfReader
 from pdf2image import convert_from_path
-import pytesseract
 
-from fastapi import UploadFile, HTTPException
+from ..core.tokenizers import tokenizer
+
 
 
 CHUNK_SIZE = 1024 * 1024  # 1 MB por bloque
@@ -88,28 +91,49 @@ async def extract_text_with_ocr(pdf_path: str) -> str:
         raise HTTPException(status_code=500, detail=f"Error en OCR: {str(e)}")
 
 
-#version 2 (optimizado)
-# async def extract_text_with_ocr(pdf_path: str) -> str:
-#     """Extrae texto de un PDF escaneado usando OCR optimizado."""
-#     try:
-#         pages = convert_from_path(pdf_path)  # Convertir PDF a imágenes
-#         text = ""
-#         for page in pages:
-#             # Preprocesar la imagen antes de OCR
-#             processed_page = preprocess_image(page)
-#             text += pytesseract.image_to_string(processed_page, config="--oem 3 --psm 6")
-#         return text
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"Error en OCR: {str(e)}")
+def count_tokens(text: str) -> int:
+    """
+    Cuenta el número de tokens en un texto dado usando el tokenizer de GPT-2.
+    
+    Args:
+        text (str): El texto a tokenizar.
+    
+    Returns:
+        int: El número de tokens en el texto.
+    """
+    return len(tokenizer.encode(text))
 
-#version 1 (no optimizado)
-# async def extract_text_with_ocr(pdf_path: str) -> str:
-#     """Extrae texto de un PDF escaneado usando OCR."""
-#     try:
-#         pages = convert_from_path(pdf_path)  # Convertir PDF a imágenes
-#         text = ""
-#         for page in pages:
-#             text += pytesseract.image_to_string(page)  # Extraer texto con OCR
-#         return text
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"Error en OCR: {str(e)}")
+
+
+def generate_markdown(content: list[str]) -> str:
+    """
+    Genera un string en formato Markdown a partir de una lista de strings.
+    """
+    markdown = ""
+    for block in content:
+        block = block.strip()
+
+        # Detectar si es tipo tabla (por separadores de columnas)
+        if '|' in block and '\n' in block:
+            lines = block.strip().split('\n')
+            if len(lines) >= 2 and all('|' in line for line in lines[:2]):
+                header = lines[0]
+                separator = '|'.join(['---'] * len(header.split('|')))
+                markdown += f"{header}\n{separator}\n" + '\n'.join(lines[1:]) + '\n\n'
+                continue
+
+        # Detectar listas
+        if re.search(r'^[-*+]\s', block, re.MULTILINE):
+            markdown += block + "\n\n"
+            continue
+
+        # Detectar posibles cabeceras tipo factura
+        factura_lines = block.split('\n')
+        if all(':' in line for line in factura_lines if line.strip()):
+            markdown += '\n'.join([f"**{k.strip()}**: {v.strip()}" for k, v in (line.split(':', 1) for line in factura_lines if ':' in line)]) + "\n\n"
+            continue
+
+        # Por defecto, como párrafo
+        markdown += block + "\n\n"
+
+    return markdown.strip()
